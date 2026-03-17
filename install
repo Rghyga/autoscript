@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+TMP_ROOT=""
+DEFAULTS_FILE_LOCAL="$SELF_DIR/config/defaults.conf"
+cleanup() { [[ -n "$TMP_ROOT" && -d "$TMP_ROOT" ]] && rm -rf "$TMP_ROOT"; }
+trap cleanup EXIT
+
+C0='\033[0m'; C1='\033[1;36m'; C2='\033[1;32m'; C3='\033[1;31m'; C4='\033[1;33m'; C5='\033[1;37m'
+log() { printf '%b[KATSU]%b %s\n' "$C1" "$C0" "$*"; }
+warn() { printf '%b[WARN]%b %s\n' "$C4" "$C0" "$*"; }
+die() { printf '%b[ERR]%b %s\n' "$C3" "$C0" "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+DEFAULT_GITHUB_REPO="Rghyga/autoscript"
+DEFAULT_GITHUB_BRANCH="master"
+DEFAULT_REPO_BASE="https://raw.githubusercontent.com/Rghyga/autoscript/master"
+DEFAULT_ACME_EMAIL="admin@akademi-belajar.my.id"
+
+load_defaults_file() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  # shellcheck disable=SC1090
+  source "$file"
+  DEFAULT_GITHUB_REPO="${KATSU_GITHUB_REPO:-$DEFAULT_GITHUB_REPO}"
+  DEFAULT_GITHUB_BRANCH="${KATSU_GITHUB_BRANCH:-$DEFAULT_GITHUB_BRANCH}"
+  DEFAULT_REPO_BASE="${KATSU_REPO_BASE:-$DEFAULT_REPO_BASE}"
+  DEFAULT_ACME_EMAIL="${KATSU_ACME_EMAIL:-$DEFAULT_ACME_EMAIL}"
+}
+
+apply_defaults() {
+  export KATSU_GITHUB_REPO="${KATSU_GITHUB_REPO:-$DEFAULT_GITHUB_REPO}"
+  export KATSU_GITHUB_BRANCH="${KATSU_GITHUB_BRANCH:-$DEFAULT_GITHUB_BRANCH}"
+  export KATSU_REPO_BASE="${KATSU_REPO_BASE:-$DEFAULT_REPO_BASE}"
+  export KATSU_ACME_EMAIL="${KATSU_ACME_EMAIL:-$DEFAULT_ACME_EMAIL}"
+}
+
+banner() {
+  clear || true
+  printf '%b\n' "$C1────────────────────────────────────────────────────────────$C0"
+  printf '%b\n' "$C5                 KATSU PANEL INSTALLER$C0"
+  printf '%b\n' "$C1────────────────────────────────────────────────────────────$C0"
+  echo ' Name      : KatsuXD Official'
+  echo " IP        : $(curl -4fsSL --max-time 8 https://api.ipify.org 2>/dev/null || echo unknown)"
+  echo ' OS Support: Debian 10,11,12 / Ubuntu 20.04,22.04,24.04'
+  echo ' Protocol  : SSH / VMESS / VLESS / TROJAN'
+  printf '%b\n' "$C1────────────────────────────────────────────────────────────$C0"
+}
+
+ensure_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || die 'Please run installer as root'; }
+
+ensure_tools() {
+  local missing=()
+  for x in curl wget tar; do have "$x" || missing+=("$x"); done
+  if ((${#missing[@]})); then
+    have apt-get || die "Missing required tools: ${missing[*]}"
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y >/dev/null 2>&1 || true
+    apt-get install -y "${missing[@]}" >/dev/null 2>&1 || die 'failed installing bootstrap dependencies'
+  fi
+}
+
+prompt_domain() {
+  local domain="${KATSU_DOMAIN:-}"
+  while :; do
+    if [[ -z "$domain" ]]; then
+      read -r -p 'Input your domain: ' domain
+    fi
+    domain=$(printf '%s' "$domain" | tr 'A-Z' 'a-z' | xargs)
+    if [[ "$domain" =~ ^[a-z0-9.-]+$ ]] && [[ "$domain" == *.* ]]; then
+      export KATSU_DOMAIN="$domain"
+      return 0
+    fi
+    warn 'Domain tidak valid. Contoh: vpn.domainkamu.com'
+    domain=""
+  done
+}
+
+show_mode() {
+  banner
+  log 'Installer mode detection'
+  if [[ -f "$SELF_DIR/scripts/setup.sh" && -d "$SELF_DIR/lib" && -d "$SELF_DIR/menu" ]]; then
+    echo ' Mode   : local project source'
+  else
+    echo ' Mode   : raw github source'
+    echo " Repo   : ${KATSU_GITHUB_REPO:-}"
+    echo " Branch : ${KATSU_GITHUB_BRANCH:-master}"
+    echo " Source : ${KATSU_REPO_BASE:-}"
+  fi
+  echo " Domain : ${KATSU_DOMAIN:-<will prompt>}"
+  echo " Email  : ${KATSU_ACME_EMAIL:-admin@yourdomain.com}"
+  printf '%b\n' "$C1────────────────────────────────────────────────────────────$C0"
+  if [[ -z "${STY:-}" && -z "${TMUX:-}" ]]; then
+    warn 'Disarankan jalankan installer di screen/tmux agar aman jika SSH terputus.'
+    echo ' Contoh: screen -S install'
+    printf '%b\n' "$C1────────────────────────────────────────────────────────────$C0"
+  fi
+}
+
+run_local() {
+  cd "$SELF_DIR"
+  chmod +x scripts/setup.sh
+  exec bash scripts/setup.sh
+}
+
+fetch() {
+  local url="$1" out="$2"
+  mkdir -p "$(dirname "$out")"
+  curl -fsSL --retry 3 --connect-timeout 20 "$url" -o "$out" || die "failed downloading $url"
+}
+
+remote_fetch_and_run() {
+  local repo_base="$1" stage manifest line
+  [[ -n "$repo_base" ]] || die 'repo base is empty'
+  ensure_tools
+  TMP_ROOT=$(mktemp -d)
+  stage="$TMP_ROOT/project"
+  mkdir -p "$stage"
+  log 'Downloading project manifest from GitHub raw ...'
+  fetch "$repo_base/manifest.txt" "$TMP_ROOT/manifest.txt"
+  manifest=$(wc -l < "$TMP_ROOT/manifest.txt" | tr -d ' ')
+  [[ "$manifest" -gt 0 ]] || die 'empty manifest from remote source'
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    fetch "$repo_base/$line" "$stage/$line"
+  done < "$TMP_ROOT/manifest.txt"
+  [[ -f "$stage/scripts/setup.sh" ]] || die 'scripts/setup.sh not found in downloaded source'
+  [[ -f "$stage/config/defaults.conf" ]] && load_defaults_file "$stage/config/defaults.conf"
+  apply_defaults
+  cd "$stage"
+  find "$stage" -type f -name '*.sh' -exec chmod +x {} +
+  exec bash "$stage/scripts/setup.sh"
+}
+
+main() {
+  ensure_root
+  load_defaults_file "$DEFAULTS_FILE_LOCAL"
+  apply_defaults
+  prompt_domain
+  show_mode
+  if [[ -f "$SELF_DIR/scripts/setup.sh" && -d "$SELF_DIR/lib" && -d "$SELF_DIR/menu" ]]; then
+    run_local
+  fi
+  remote_fetch_and_run "${KATSU_REPO_BASE:-$DEFAULT_REPO_BASE}"
+}
+
+main "$@"

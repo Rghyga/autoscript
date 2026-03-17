@@ -1,0 +1,10 @@
+[Unit]
+Description=Run KATSU PANEL expiry monitor every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=katsu-expire.service
+
+[Install]
+WantedBy=timers.target

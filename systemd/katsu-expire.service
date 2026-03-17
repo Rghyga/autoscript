@@ -1,0 +1,8 @@
+[Unit]
+Description=KATSU PANEL account expiry monitor
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/katsu-panel/scripts/expire-check.sh
+User=root

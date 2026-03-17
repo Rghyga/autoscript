@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec bash /usr/local/katsu-panel/scripts/update-panel.sh "$@"

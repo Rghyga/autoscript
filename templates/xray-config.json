@@ -1,0 +1,104 @@
+{
+  "log": {
+    "access": "/var/log/xray/access.log",
+    "error": "/var/log/xray/error.log",
+    "loglevel": "warning"
+  },
+  "api": {
+    "tag": "api",
+    "services": ["HandlerService", "LoggerService", "StatsService"]
+  },
+  "stats": {},
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+  "inbounds": [
+    {
+      "tag": "api",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" }
+    },
+    {
+      "tag": "vmess-ws",
+      "listen": "127.0.0.1",
+      "port": 10001,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": { "network": "ws", "wsSettings": { "path": "/vmess" } },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "tag": "vmess-grpc",
+      "listen": "127.0.0.1",
+      "port": 10011,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": { "network": "grpc", "grpcSettings": { "serviceName": "vmess-grpc" } }
+    },
+    {
+      "tag": "vless-ws",
+      "listen": "127.0.0.1",
+      "port": 10002,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": { "network": "ws", "wsSettings": { "path": "/vless" } },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "tag": "vless-grpc",
+      "listen": "127.0.0.1",
+      "port": 10012,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": { "network": "grpc", "grpcSettings": { "serviceName": "vless-grpc" } }
+    },
+    {
+      "tag": "trojan-ws",
+      "listen": "127.0.0.1",
+      "port": 10003,
+      "protocol": "trojan",
+      "settings": { "clients": [] },
+      "streamSettings": { "network": "ws", "wsSettings": { "path": "/trojan" } },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "tag": "trojan-grpc",
+      "listen": "127.0.0.1",
+      "port": 10013,
+      "protocol": "trojan",
+      "settings": { "clients": [] },
+      "streamSettings": { "network": "grpc", "grpcSettings": { "serviceName": "trojan-grpc" } }
+    }
+  ],
+  "outbounds": [
+    { "protocol": "freedom", "tag": "direct" },
+    { "protocol": "blackhole", "tag": "blocked" }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "protocol": ["bittorrent"],
+        "outboundTag": "blocked"
+      }
+    ]
+  }
+}

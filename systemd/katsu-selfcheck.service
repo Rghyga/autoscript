@@ -1,0 +1,11 @@
+[Unit]
+Description=KATSU PANEL post-install self-check
+After=network-online.target nginx.service xray.service fail2ban.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/katsu-panel/scripts/self-check.sh --strict
+User=root
+
+[Install]
+WantedBy=multi-user.target

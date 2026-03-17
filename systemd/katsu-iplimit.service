@@ -1,0 +1,14 @@
+[Unit]
+Description=KATSU PANEL realtime IP limit monitor
+After=network-online.target xray.service ssh.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/katsu-panel/scripts/iplimit-monitor.sh
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
